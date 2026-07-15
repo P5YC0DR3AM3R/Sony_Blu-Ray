@@ -8,9 +8,13 @@ UPnP IRCC (IR-over-IP) SOAP service.
 
 - **PIN pairing flow** — one tap sends `GET /cers/api/register` to the player,
   which displays a PIN on your TV; enter it in the app to finish registration.
-- **Full remote surface** — D-pad (Up/Down/Left/Right/OK), media transport
-  (Play, Pause, Stop, Skip Back/Forward, Rewind, Fast Forward), and utility
-  keys (Power, Home, Options, Return).
+- **Full remote surface, styled after the physical RMT-B119A remote** —
+  eject + power, number pad (0–9) with volume rocker, Audio/Subtitle/Display,
+  the four color keys, Top Menu / Pop-Up Menu, D-pad (Up/Down/Left/Right/OK)
+  flanked by Return and Options, the Home pill, media transport (Prev, Pause,
+  Next, Rewind, Play, Fast Forward, Stop), and Netflix/SEN. VOL and SEN are
+  rendered for fidelity but the BDP-S5100 doesn't expose them over IP, so
+  they explain that when tapped.
 - **IRCC over SOAP** — every keypress is a `POST /IRCC` with the
   `X_SendIRCC` SOAP envelope and `SOAPACTION` header.
 - **`.env`-driven configuration** — the player's IP, port, device ID, and

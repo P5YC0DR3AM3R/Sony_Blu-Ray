@@ -32,6 +32,31 @@ enum IRCCCommand: String, CaseIterable, Identifiable {
     case topMenu   = "AAAAAwAAHFoAAAAsAw=="
     case popUpMenu = "AAAAAwAAHFoAAAApAw=="
 
+    // Number pad
+    case num1 = "AAAAAwAAHFoAAAAAAw=="
+    case num2 = "AAAAAwAAHFoAAAABAw=="
+    case num3 = "AAAAAwAAHFoAAAACAw=="
+    case num4 = "AAAAAwAAHFoAAAADAw=="
+    case num5 = "AAAAAwAAHFoAAAAEAw=="
+    case num6 = "AAAAAwAAHFoAAAAFAw=="
+    case num7 = "AAAAAwAAHFoAAAAGAw=="
+    case num8 = "AAAAAwAAHFoAAAAHAw=="
+    case num9 = "AAAAAwAAHFoAAAAIAw=="
+    case num0 = "AAAAAwAAHFoAAAAJAw=="
+
+    // Audio / subtitles
+    case audio    = "AAAAAwAAHFoAAABkAw=="
+    case subtitle = "AAAAAwAAHFoAAABjAw=="
+
+    // Color keys
+    case yellow = "AAAAAwAAHFoAAABoAw=="
+    case blue   = "AAAAAwAAHFoAAABpAw=="
+    case red    = "AAAAAwAAHFoAAABmAw=="
+    case green  = "AAAAAwAAHFoAAABnAw=="
+
+    // Apps
+    case netflix = "AAAAAwAAHFoAAABtAw=="
+
     var id: String { rawValue }
 
     /// Human-readable label used in UI accessibility and status messages.
@@ -57,6 +82,23 @@ enum IRCCCommand: String, CaseIterable, Identifiable {
         case .forward: return "Fast Forward"
         case .topMenu: return "Top Menu"
         case .popUpMenu: return "Pop-Up Menu"
+        case .num1: return "1"
+        case .num2: return "2"
+        case .num3: return "3"
+        case .num4: return "4"
+        case .num5: return "5"
+        case .num6: return "6"
+        case .num7: return "7"
+        case .num8: return "8"
+        case .num9: return "9"
+        case .num0: return "0"
+        case .audio: return "Audio"
+        case .subtitle: return "Subtitle"
+        case .yellow: return "Yellow"
+        case .blue: return "Blue"
+        case .red: return "Red"
+        case .green: return "Green"
+        case .netflix: return "Netflix"
         }
     }
 }

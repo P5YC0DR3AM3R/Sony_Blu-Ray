@@ -93,6 +93,14 @@ final class RemoteViewModel: ObservableObject {
 
     // MARK: - Commands
 
+    /// For keys that exist on the physical RMT-B119A but have no reliable
+    /// IRCC-over-IP equivalent (VOL drives the TV via IR; SEN's code is
+    /// undocumented), so tapping them explains instead of failing silently.
+    func noteUnsupported(_ label: String) {
+        lastError = nil
+        statusMessage = "\(label) isn't available over IP on the BDP-S5100."
+    }
+
     func send(_ command: IRCCCommand) {
         lastCommand = command
         lastError = nil
