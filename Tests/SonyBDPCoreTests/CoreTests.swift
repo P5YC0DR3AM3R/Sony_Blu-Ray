@@ -20,17 +20,25 @@ final class EnvConfigTests: XCTestCase {
 
     func testHandlesQuotesCommentsAndWhitespace() {
         let config = EnvConfig.parse("""
-        BDP_IP = "10.0.0.9"
-        PORT='50002'
+        BDP_IP = "10.0.0.9" # inline comment after quoted value
+        PORT=50002 # inline comment after bare value
 
         # comment line
+        DEVICE_ID="MediaRemote:#1"
         DEVICE_NAME=My Remote
         """)
         XCTAssertEqual(config.bdpIP, "10.0.0.9")
         XCTAssertEqual(config.port, 50002)
+        // A hash inside quotes is part of the value, not a comment.
+        XCTAssertEqual(config.deviceID, "MediaRemote:#1")
         XCTAssertEqual(config.deviceName, "My Remote")
-        // Missing key falls back to the default.
+    }
+
+    func testMissingKeyFallsBackToDefault() {
+        let config = EnvConfig.parse("BDP_IP=10.0.0.9")
         XCTAssertEqual(config.deviceID, EnvConfig.fallback.deviceID)
+        XCTAssertEqual(config.deviceName, EnvConfig.fallback.deviceName)
+        XCTAssertEqual(config.port, EnvConfig.fallback.port)
     }
 
     func testEmptyContentsFallsBackToDefaults() {
@@ -53,6 +61,13 @@ final class SOAPEnvelopeTests: XCTestCase {
     func testExtractsSOAPFault() {
         let body = "<s:Fault><faultstring>UPnPError</faultstring></s:Fault>"
         XCTAssertEqual(BDPNetworkClient.extractSOAPFault(from: body), "UPnPError")
+
+        let namespaced = "<s:Fault><s:faultstring>Namespaced fault</s:faultstring></s:Fault>"
+        XCTAssertEqual(BDPNetworkClient.extractSOAPFault(from: namespaced), "Namespaced fault")
+
+        let attributed = "<s:Fault><faultstring xml:lang=\"en\">Attributed fault</faultstring></s:Fault>"
+        XCTAssertEqual(BDPNetworkClient.extractSOAPFault(from: attributed), "Attributed fault")
+
         XCTAssertNil(BDPNetworkClient.extractSOAPFault(from: "<ok/>"))
     }
 

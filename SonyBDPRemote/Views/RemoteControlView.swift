@@ -3,6 +3,7 @@ import SwiftUI
 /// The main remote surface: utility row, D-pad, and media transport.
 struct RemoteControlView: View {
     @EnvironmentObject private var viewModel: RemoteViewModel
+    @State private var showingResetConfirmation = false
 
     var body: some View {
         VStack(spacing: 26) {
@@ -32,7 +33,7 @@ struct RemoteControlView: View {
             }
             Spacer()
             Button {
-                viewModel.resetPairing()
+                showingResetConfirmation = true
             } label: {
                 Image(systemName: "link.badge.plus")
                     .font(.subheadline)
@@ -41,6 +42,14 @@ struct RemoteControlView: View {
                     .background(Circle().fill(Theme.surface))
             }
             .accessibilityLabel("Re-pair")
+            .confirmationDialog("Are you sure you want to reset pairing?",
+                                isPresented: $showingResetConfirmation,
+                                titleVisibility: .visible) {
+                Button("Reset Pairing", role: .destructive) {
+                    viewModel.resetPairing()
+                }
+                Button("Cancel", role: .cancel) {}
+            }
         }
     }
 

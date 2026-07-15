@@ -9,6 +9,7 @@ enum BDPError: LocalizedError {
     case badResponse
     case httpStatus(Int)
     case pinRequired
+    case invalidPin
     case soapFault(String)
 
     var errorDescription: String? {
@@ -21,6 +22,8 @@ enum BDPError: LocalizedError {
             return "The player responded with HTTP \(code)."
         case .pinRequired:
             return "The player is showing a PIN on the TV. Enter it to finish pairing."
+        case .invalidPin:
+            return "The entered PIN was incorrect. Please try again."
         case .soapFault(let detail):
             return "The player rejected the command: \(detail)"
         }
@@ -81,7 +84,7 @@ struct BDPNetworkClient {
         guard let http = response as? HTTPURLResponse else { throw BDPError.badResponse }
         switch http.statusCode {
         case 200: return
-        case 401: throw BDPError.pinRequired
+        case 401: throw BDPError.invalidPin
         default: throw BDPError.httpStatus(http.statusCode)
         }
     }
@@ -156,16 +159,18 @@ struct BDPNetworkClient {
     }
 
     /// Pulls the `<errorDescription>`/`<faultstring>` text out of a SOAP
-    /// fault body, if present.
+    /// fault body, if present. Tolerates namespace prefixes
+    /// (`<s:faultstring>`) and attributes (`<faultstring xml:lang="en">`).
     static func extractSOAPFault(from body: String) -> String? {
         for tag in ["errorDescription", "faultstring"] {
-            if let open = body.range(of: "<\(tag)>"),
-               let close = body.range(of: "</\(tag)>"),
-               open.upperBound <= close.lowerBound {
-                let text = body[open.upperBound..<close.lowerBound]
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty { return text }
-            }
+            let openPattern = "<(?:[A-Za-z0-9]+:)?\(tag)(?:\\s[^>]*)?>"
+            let closePattern = "</(?:[A-Za-z0-9]+:)?\(tag)>"
+            guard let open = body.range(of: openPattern, options: .regularExpression),
+                  let close = body.range(of: closePattern, options: .regularExpression),
+                  open.upperBound <= close.lowerBound else { continue }
+            let text = body[open.upperBound..<close.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { return text }
         }
         return nil
     }

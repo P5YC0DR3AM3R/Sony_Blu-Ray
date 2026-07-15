@@ -38,10 +38,16 @@ struct EnvConfig: Equatable {
     /// Loads configuration from the `.env` bundled with the app, falling back
     /// to `EnvConfig.fallback` when the file is absent or unreadable.
     static func load(bundle: Bundle = .main) -> EnvConfig {
-        let candidates = [
-            bundle.bundleURL.appendingPathComponent(".env"),
-            bundle.bundleURL.appendingPathComponent("env"),
-        ]
+        // Prefer the standard resource lookup (handles macOS's
+        // Contents/Resources layout), then fall back to the flat iOS
+        // bundle root where the build phase drops the dotfile.
+        var candidates: [URL] = []
+        for name in [".env", "env"] {
+            if let url = bundle.url(forResource: name, withExtension: nil) {
+                candidates.append(url)
+            }
+            candidates.append(bundle.bundleURL.appendingPathComponent(name))
+        }
         for url in candidates {
             if let contents = try? String(contentsOf: url, encoding: .utf8) {
                 return parse(contents)
@@ -50,8 +56,10 @@ struct EnvConfig: Equatable {
         return .fallback
     }
 
-    /// Parses `.env`-style `KEY=VALUE` text. Blank lines and `#` comments are
-    /// ignored; values may be wrapped in single or double quotes.
+    /// Parses `.env`-style `KEY=VALUE` text. Blank lines and `#` comments
+    /// (full-line or inline) are ignored; values may be wrapped in single or
+    /// double quotes, in which case `#` characters inside the quotes are
+    /// preserved.
     static func parse(_ contents: String) -> EnvConfig {
         var values: [String: String] = [:]
         for rawLine in contents.split(whereSeparator: \.isNewline) {
@@ -60,10 +68,15 @@ struct EnvConfig: Equatable {
             guard let eq = line.firstIndex(of: "=") else { continue }
             let key = String(line[..<eq]).trimmingCharacters(in: .whitespaces)
             var value = String(line[line.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
-            if value.count >= 2,
-               (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
-               (value.hasPrefix("'") && value.hasSuffix("'")) {
-                value = String(value.dropFirst().dropLast())
+            if let quote = value.first, quote == "\"" || quote == "'" {
+                let rest = value.dropFirst()
+                if let closing = rest.firstIndex(of: quote) {
+                    value = String(rest[..<closing])
+                } else {
+                    value = String(rest)
+                }
+            } else if let hash = value.firstIndex(of: "#") {
+                value = String(value[..<hash]).trimmingCharacters(in: .whitespaces)
             }
             guard !key.isEmpty else { continue }
             values[key] = value
