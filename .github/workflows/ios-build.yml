@@ -1,0 +1,75 @@
+name: iOS Simulator Build & Launch
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  build-and-launch:
+    name: Build, test, and launch in iOS Simulator
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Run core unit tests (SwiftPM)
+        run: swift test
+
+      - name: Create .env from example
+        run: cp .env.example .env
+
+      - name: Build app for iOS Simulator
+        run: |
+          xcodebuild -project SonyBDPRemote.xcodeproj \
+            -scheme SonyBDPRemote \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Boot simulator, launch app, capture screenshots
+        run: |
+          set -euxo pipefail
+          mkdir -p screenshots
+
+          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone' \
+            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+          echo "Using simulator $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+          APP_PATH=$(find build/Build/Products -maxdepth 2 -name 'SonyBDPRemote.app' | head -1)
+          echo "Installing $APP_PATH"
+          xcrun simctl install "$UDID" "$APP_PATH"
+
+          BUNDLE_ID=com.p5yc0dr3am3r.SonyBDPRemote
+
+          # First launch: fresh install shows the pairing screen.
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 10
+          xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
+            || { echo "::error::App is not running after launch"; exit 1; }
+          xcrun simctl io "$UDID" screenshot screenshots/01-pairing.png
+          xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+
+          # Second launch: pre-mark as paired so the RMT-B119A remote face shows.
+          xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" isPaired -bool YES
+          xcrun simctl launch "$UDID" "$BUNDLE_ID"
+          sleep 10
+          xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
+            || { echo "::error::App is not running on second launch"; exit 1; }
+          xcrun simctl io "$UDID" screenshot screenshots/02-remote.png
+
+          echo "App launched successfully in the iOS Simulator."
+
+      - name: Upload simulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
