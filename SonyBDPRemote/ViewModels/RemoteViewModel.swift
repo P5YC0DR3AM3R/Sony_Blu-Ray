@@ -34,6 +34,30 @@ final class RemoteViewModel: ObservableObject {
 
     var isPaired: Bool { pairingPhase == .paired }
 
+    // MARK: - Connectivity self-test
+
+    @Published var isTestingConnection = false
+
+    /// Probes the configured IP/port and reports the result in the status
+    /// line, so network problems can be diagnosed without attempting a full
+    /// pairing round-trip.
+    func testConnection() {
+        lastError = nil
+        statusMessage = "Testing \(config.bdpIP):\(config.port)…"
+        isTestingConnection = true
+        Task {
+            let result = await client.checkReachability()
+            isTestingConnection = false
+            switch result {
+            case .reachable(let status):
+                statusMessage = "Player reachable (HTTP \(status)) — ready to pair."
+            case .unreachable(let reason):
+                statusMessage = nil
+                lastError = reason
+            }
+        }
+    }
+
     // MARK: - Pairing
 
     func startPairing() {
