@@ -31,6 +31,7 @@ struct PairingView: View {
             switch viewModel.pairingPhase {
             case .idle, .requesting:
                 pairButton
+                testConnectionButton
             case .awaitingPIN, .verifying:
                 pinEntry
             case .paired:
@@ -79,6 +80,28 @@ struct PairingView: View {
         }
         .buttonStyle(PressedScaleStyle())
         .disabled(viewModel.pairingPhase == .requesting)
+    }
+
+    private var testConnectionButton: some View {
+        Button(action: viewModel.testConnection) {
+            HStack(spacing: 8) {
+                if viewModel.isTestingConnection {
+                    ProgressView().tint(Theme.textSecondary).scaleEffect(0.8)
+                } else {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                }
+                Text(viewModel.isTestingConnection ? "Testing…" : "Test Connection")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Theme.textSecondary)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 18)
+            .background(
+                Capsule().strokeBorder(Theme.textSecondary.opacity(0.4), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PressedScaleStyle())
+        .disabled(viewModel.isTestingConnection || viewModel.pairingPhase == .requesting)
     }
 
     private var pinEntry: some View {

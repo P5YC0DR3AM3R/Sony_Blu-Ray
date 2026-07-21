@@ -59,6 +59,53 @@ struct BDPNetworkClient {
         }
     }
 
+    // MARK: - Reachability
+
+    /// Result of a connectivity self-test against the player.
+    enum Reachability {
+        /// The player answered (any HTTP status counts — even 404 proves a
+        /// device is listening on the configured IP and port).
+        case reachable(httpStatus: Int)
+        /// Nothing answered; carries a human-readable reason (timed out,
+        /// connection refused, no route to host, …).
+        case unreachable(reason: String)
+    }
+
+    /// Probes `http://{IP}:{PORT}/` with a short timeout. This deliberately
+    /// does not touch the CERS/IRCC endpoints — it only answers "is anything
+    /// listening there?", which separates network problems (wrong IP, player
+    /// offline, different subnet) from protocol/registration problems.
+    func checkReachability() async -> Reachability {
+        guard let base = config.baseURL else {
+            return .unreachable(reason: "Invalid IP/port in configuration.")
+        }
+        var request = URLRequest(url: base)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 5
+        do {
+            let (_, response) = try await session.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return .reachable(httpStatus: status)
+        } catch let error as URLError {
+            let reason: String
+            switch error.code {
+            case .timedOut:
+                reason = "Timed out — nothing answered at \(config.bdpIP):\(config.port). Check the player's IP and that it's powered on."
+            case .cannotConnectToHost:
+                reason = "Connection refused — a device exists at \(config.bdpIP) but port \(config.port) is closed. Is this the right device?"
+            case .cannotFindHost, .dnsLookupFailed:
+                reason = "Host not found — check the IP address."
+            case .notConnectedToInternet, .networkConnectionLost:
+                reason = "This device has no network connection."
+            default:
+                reason = error.localizedDescription
+            }
+            return .unreachable(reason: reason)
+        } catch {
+            return .unreachable(reason: error.localizedDescription)
+        }
+    }
+
     // MARK: - Pairing (CERS register)
 
     /// Starts the pairing sequence:

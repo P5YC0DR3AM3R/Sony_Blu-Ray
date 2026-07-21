@@ -73,3 +73,18 @@ jobs:
           name: simulator-screenshots
           path: screenshots/
           if-no-files-found: ignore
+
+      # Embeds small JPEG copies of the screenshots in the job log as
+      # base64, so the rendered UI can be inspected from environments that
+      # can read logs but cannot download artifacts.
+      - name: Inline screenshot previews in log
+        if: always()
+        run: |
+          for f in screenshots/*.png; do
+            [ -f "$f" ] || continue
+            small="${f%.png}-small.jpg"
+            sips -Z 360 -s format jpeg -s formatOptions 45 "$f" --out "$small" >/dev/null
+            echo "===== BEGIN_B64 $(basename "$small") ====="
+            base64 -b 76 -i "$small"
+            echo "===== END_B64 $(basename "$small") ====="
+          done
