@@ -42,18 +42,20 @@ final class RemoteViewModel: ObservableObject {
     /// line, so network problems can be diagnosed without attempting a full
     /// pairing round-trip.
     func testConnection() {
+        guard !isTestingConnection, pairingPhase == .idle else { return }
         lastError = nil
         statusMessage = "Testing \(config.bdpIP):\(config.port)…"
         isTestingConnection = true
-        Task {
-            let result = await client.checkReachability()
-            isTestingConnection = false
+        Task { [weak self] in
+            guard let self else { return }
+            let result = await self.client.checkReachability()
+            self.isTestingConnection = false
             switch result {
             case .reachable(let status):
-                statusMessage = "Player reachable (HTTP \(status)) — ready to pair."
+                self.statusMessage = "Player reachable (HTTP \(status)) — ready to pair."
             case .unreachable(let reason):
-                statusMessage = nil
-                lastError = reason
+                self.statusMessage = nil
+                self.lastError = reason
             }
         }
     }

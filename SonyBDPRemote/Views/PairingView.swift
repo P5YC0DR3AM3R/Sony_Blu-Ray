@@ -101,7 +101,7 @@ struct PairingView: View {
             )
         }
         .buttonStyle(PressedScaleStyle())
-        .disabled(viewModel.isTestingConnection)
+        .disabled(viewModel.isTestingConnection || viewModel.pairingPhase == .requesting)
     }
 
     private var pinEntry: some View {
