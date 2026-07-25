@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build-and-launch:
     name: Build, test, and launch in iOS Simulator
@@ -73,6 +76,30 @@ jobs:
           name: simulator-screenshots
           path: screenshots/
           if-no-files-found: ignore
+
+      # Publishes the screenshots to a dedicated `ci-screenshots` branch so
+      # they can be retrieved with a plain `git fetch` — useful from
+      # environments that can reach the git remote but not artifact storage.
+      # Built in an isolated repo under RUNNER_TEMP so the checkout is never
+      # touched, and force-pushed so the branch only ever holds the latest run.
+      - name: Publish screenshots to ci-screenshots branch
+        if: always()
+        run: |
+          set -euo pipefail
+          ls screenshots/*.png >/dev/null 2>&1 || exit 0
+          workdir="$RUNNER_TEMP/shots"
+          mkdir -p "$workdir"
+          cp screenshots/*.png "$workdir/"
+          cd "$workdir"
+          git init -q
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add -A
+          git commit -qm "Simulator screenshots from run ${GITHUB_RUN_ID} (${GITHUB_SHA})"
+          git push -q --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            HEAD:refs/heads/ci-screenshots
+          echo "Published screenshots to the ci-screenshots branch."
 
       # Embeds small JPEG copies of the screenshots in the job log as
       # base64, so the rendered UI can be inspected from environments that
