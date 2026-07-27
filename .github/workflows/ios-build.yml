@@ -68,17 +68,18 @@ jobs:
           SMALL=$(pick "iPhone SE"); [ -n "$SMALL" ] || SMALL=$(pick "iPhone 1[0-9]( |$)")
           LARGE=$(pick "Pro Max");   [ -n "$LARGE" ] || LARGE=$(pick "iPhone")
 
-          TARGETS=""
+          # Device names contain spaces, so collect targets one per line and
+          # iterate on a file descriptor — never via word splitting.
+          TARGET_FILE="$RUNNER_TEMP/targets.txt"
+          : > "$TARGET_FILE"
           for entry in "$LARGE" "$SMALL"; do
             [ -n "$entry" ] || continue
-            case "$TARGETS" in *"${entry%%|*}"*) continue ;; esac
-            TARGETS="$TARGETS $entry"
+            grep -q "^${entry%%|*}|" "$TARGET_FILE" 2>/dev/null || echo "$entry" >> "$TARGET_FILE"
           done
-          echo "Testing on:$TARGETS"
+          echo "Testing on:"; cat "$TARGET_FILE"
 
-          for entry in $TARGETS; do
-            UDID="${entry%%|*}"
-            NAME="${entry#*|}"
+          while IFS='|' read -r UDID NAME <&3; do
+            [ -n "$UDID" ] || continue
             SLUG=$(echo "$NAME" | tr ' ' '-')
             echo "::group::$NAME ($UDID)"
 
@@ -106,7 +107,7 @@ jobs:
             xcrun simctl shutdown "$UDID" || true
             echo "$NAME: launched and captured successfully."
             echo "::endgroup::"
-          done
+          done 3< "$TARGET_FILE"
 
       - name: Upload simulator screenshots
         if: always()
