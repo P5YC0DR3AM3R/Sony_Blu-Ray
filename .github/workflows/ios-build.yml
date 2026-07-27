@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build-and-launch:
     name: Build, test, and launch in iOS Simulator
@@ -31,40 +34,80 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Boot simulator, launch app, capture screenshots
+      # Compiles for real iPhone hardware (arm64 device slice). Signing is
+      # skipped because CI has no provisioning profile — this proves the
+      # device build is sound, not that it can be installed.
+      - name: Build for iPhone device (unsigned)
         run: |
-          set -euxo pipefail
+          xcodebuild -project SonyBDPRemote.xcodeproj \
+            -scheme SonyBDPRemote \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      # Runs the app on both the largest and smallest current iPhones so
+      # layout regressions on small screens are caught, not just on the
+      # runner's default device.
+      - name: Launch on multiple iPhone sizes and capture screenshots
+        run: |
+          set -euo pipefail
           mkdir -p screenshots
-
-          UDID=$(xcrun simctl list devices available | grep -m1 'iPhone' \
-            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
-          echo "Using simulator $UDID"
-          xcrun simctl boot "$UDID"
-          xcrun simctl bootstatus "$UDID" -b
-
-          APP_PATH=$(find build/Build/Products -maxdepth 2 -name 'SonyBDPRemote.app' | head -1)
-          echo "Installing $APP_PATH"
-          xcrun simctl install "$UDID" "$APP_PATH"
-
           BUNDLE_ID=com.p5yc0dr3am3r.SonyBDPRemote
+          APP_PATH=$(find build/Build/Products -maxdepth 2 -name 'SonyBDPRemote.app' | head -1)
+          echo "App bundle: $APP_PATH"
 
-          # First launch: fresh install shows the pairing screen.
-          xcrun simctl launch "$UDID" "$BUNDLE_ID"
-          sleep 10
-          xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
-            || { echo "::error::App is not running after launch"; exit 1; }
-          xcrun simctl io "$UDID" screenshot screenshots/01-pairing.png
-          xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+          DEVJSON=$(xcrun simctl list devices available -j)
+          pick() {
+            echo "$DEVJSON" | jq -r --arg pat "$1" \
+              '[.devices[][] | select(.name | test($pat))] | .[0] | select(.) | "\(.udid)|\(.name)"'
+          }
 
-          # Second launch: pre-mark as paired so the RMT-B119A remote face shows.
-          xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" isPaired -bool YES
-          xcrun simctl launch "$UDID" "$BUNDLE_ID"
-          sleep 10
-          xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
-            || { echo "::error::App is not running on second launch"; exit 1; }
-          xcrun simctl io "$UDID" screenshot screenshots/02-remote.png
+          # Smallest available iPhone, then largest, de-duplicated.
+          SMALL=$(pick "iPhone SE"); [ -n "$SMALL" ] || SMALL=$(pick "iPhone 1[0-9]( |$)")
+          LARGE=$(pick "Pro Max");   [ -n "$LARGE" ] || LARGE=$(pick "iPhone")
 
-          echo "App launched successfully in the iOS Simulator."
+          # Device names contain spaces, so collect targets one per line and
+          # iterate on a file descriptor — never via word splitting.
+          TARGET_FILE="$RUNNER_TEMP/targets.txt"
+          : > "$TARGET_FILE"
+          for entry in "$LARGE" "$SMALL"; do
+            [ -n "$entry" ] || continue
+            grep -q "^${entry%%|*}|" "$TARGET_FILE" 2>/dev/null || echo "$entry" >> "$TARGET_FILE"
+          done
+          echo "Testing on:"; cat "$TARGET_FILE"
+
+          while IFS='|' read -r UDID NAME <&3; do
+            [ -n "$UDID" ] || continue
+            SLUG=$(echo "$NAME" | tr ' ' '-')
+            echo "::group::$NAME ($UDID)"
+
+            xcrun simctl boot "$UDID" || true
+            xcrun simctl bootstatus "$UDID" -b
+            xcrun simctl install "$UDID" "$APP_PATH"
+
+            # Fresh install -> pairing screen.
+            xcrun simctl launch "$UDID" "$BUNDLE_ID"
+            sleep 10
+            xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
+              || { echo "::error::App not running on $NAME after first launch"; exit 1; }
+            xcrun simctl io "$UDID" screenshot "screenshots/01-pairing-${SLUG}.png"
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID"
+
+            # Pre-mark as paired -> RMT-B119A remote face.
+            xcrun simctl spawn "$UDID" defaults write "$BUNDLE_ID" isPaired -bool YES
+            xcrun simctl launch "$UDID" "$BUNDLE_ID"
+            sleep 10
+            xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE_ID" \
+              || { echo "::error::App not running on $NAME after second launch"; exit 1; }
+            xcrun simctl io "$UDID" screenshot "screenshots/02-remote-${SLUG}.png"
+
+            xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
+            xcrun simctl shutdown "$UDID" || true
+            echo "$NAME: launched and captured successfully."
+            echo "::endgroup::"
+          done 3< "$TARGET_FILE"
 
       - name: Upload simulator screenshots
         if: always()
@@ -73,3 +116,42 @@ jobs:
           name: simulator-screenshots
           path: screenshots/
           if-no-files-found: ignore
+
+      # Publishes the screenshots to a dedicated `ci-screenshots` branch so
+      # they can be retrieved with a plain `git fetch` — useful from
+      # environments that can reach the git remote but not artifact storage.
+      # Built in an isolated repo under RUNNER_TEMP so the checkout is never
+      # touched, and force-pushed so the branch only ever holds the latest run.
+      - name: Publish screenshots to ci-screenshots branch
+        if: always()
+        run: |
+          set -euo pipefail
+          ls screenshots/*.png >/dev/null 2>&1 || exit 0
+          workdir="$RUNNER_TEMP/shots"
+          mkdir -p "$workdir"
+          cp screenshots/*.png "$workdir/"
+          cd "$workdir"
+          git init -q
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add -A
+          git commit -qm "Simulator screenshots from run ${GITHUB_RUN_ID} (${GITHUB_SHA})"
+          git push -q --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            HEAD:refs/heads/ci-screenshots
+          echo "Published screenshots to the ci-screenshots branch."
+
+      # Embeds small JPEG copies of the screenshots in the job log as
+      # base64, so the rendered UI can be inspected from environments that
+      # can read logs but cannot download artifacts.
+      - name: Inline screenshot previews in log
+        if: always()
+        run: |
+          for f in screenshots/*.png; do
+            [ -f "$f" ] || continue
+            small="${f%.png}-small.jpg"
+            sips -Z 360 -s format jpeg -s formatOptions 45 "$f" --out "$small" >/dev/null
+            echo "===== BEGIN_B64 $(basename "$small") ====="
+            base64 -b 76 -i "$small"
+            echo "===== END_B64 $(basename "$small") ====="
+          done
